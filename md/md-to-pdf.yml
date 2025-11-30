@@ -1,0 +1,155 @@
+name: Convert MD to PDF
+
+on:
+  push:
+    branches: [ main, master ]
+    paths: 
+      - 'md/**'           # 仅当 md 目录下的文件变更时触发
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:       # 允许手动触发
+
+env:
+  MD_DIR: './md'
+  PDF_DIR: './pdf'
+
+jobs:
+  convert-markdown:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0     # 获取完整历史记录用于比较文件变化
+
+    - name: Setup LaTeX and Pandoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          pandoc \
+          texlive-xetex \
+          texlive-latex-recommended \
+          texlive-latex-extra \
+          texlive-fonts-recommended \
+          texlive-fonts-extra \
+          texlive-science \
+          texlive-pictures \
+          lmodern \
+          fonts-noto-cjk
+
+    - name: Install Chinese fonts
+      run: |
+        # 安装额外的中文字体
+        sudo apt-get install -y \
+          fonts-wqy-microhei \
+          fonts-wqy-zenhei \
+          ttf-mscorefonts-installer
+
+    - name: Create PDF directory
+      run: mkdir -p ${{ env.PDF_DIR }}
+
+    - name: Get changed Markdown files
+      id: changed-files
+      uses: tj-actions/changed-files@v41
+      with:
+        files: |
+          md/**/*.md
+          md/*.md
+
+    - name: Show changed files
+      run: |
+        echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
+
+    - name: Convert changed Markdown files to PDF
+      if: steps.changed-files.outputs.any_changed == 'true'
+      run: |
+        # 创建临时字体目录
+        mkdir -p ~/.local/share/fonts
+        
+        # 处理每个修改的 Markdown 文件
+        for md_file in ${{ steps.changed-files.outputs.all_changed_files }}; do
+          if [ -f "$md_file" ]; then
+            echo "Converting: $md_file"
+            
+          # 提取文件名（不含扩展名）
+          filename=$(basename "$md_file" .md)
+          
+          # 生成 PDF 文件名
+          pdf_file="${{ env.PDF_DIR }}/$filename.pdf"
+          
+          # 使用 Pandoc 转换
+          pandoc "$md_file" \
+            -o "$pdf_file" \
+            --pdf-engine=xelatex \
+            --template=./templates/custom-template.tex \
+            -V mainfont="Noto Sans CJK SC" \
+            -V sansfont="Noto Sans CJK SC" \
+            -V monofont="Noto Sans Mono CJK SC" \
+            -V geometry:margin=0.5in \
+            -V geometry:paper=a4paper \
+            -V colorlinks=true \
+            -V linkcolor=blue \
+            -V urlcolor=blue \
+            -V toccolor=blue \
+            -V numbersections=true \
+            --listings \
+            -H ./config/listings-setup.tex \
+            --highlight-style tango \
+            -M date="$(date +'%Y年%m月%d日')" \
+            -M author="自动生成" \
+            --toc \
+            --toc-depth=3 \
+            -N
+          
+          echo "Generated: $pdf_file"
+        fi
+        done
+
+    - name: Convert all MD files (manual trigger)
+      if: github.event_name == 'workflow_dispatch'
+      run: |
+        # 手动触发时转换所有文件
+        find ${{ env.MD_DIR }} -name "*.md" | while read md_file; do
+          echo "Converting: $md_file"
+          filename=$(basename "$md_file" .md)
+          pdf_file="${{ env.PDF_DIR }}/$filename.pdf"
+          
+          pandoc "$md_file" \
+            -o "$pdf_file" \
+            --pdf-engine=xelatex \
+            --template=./templates/custom-template.tex \
+            -V mainfont="Noto Sans CJK SC" \
+            -V sansfont="Noto Sans CJK SC" \
+            -V monofont="Noto Sans Mono CJK SC" \
+            -V geometry:margin=0.5in \
+            -V geometry:paper=a4paper \
+            -V colorlinks=true \
+            -V linkcolor=blue \
+            -V urlcolor=blue \
+            -V toccolor=blue \
+            -V numbersections=true \
+            --listings \
+            -H ./config/listings-setup.tex \
+            --highlight-style tango \
+            -M date="$(date +'%Y年%m月%d日')" \
+            -M author="自动生成" \
+            --toc \
+            --toc-depth=3 \
+            -N
+        done
+
+    - name: Upload PDF artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: generated-pdfs
+        path: ${{ env.PDF_DIR }}/*.pdf
+        retention-days: 7
+
+    - name: Commit and push PDF files
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add ${{ env.PDF_DIR }}/*.pdf
+        git diff --staged --quiet || git commit -m "Auto-generated PDFs from Markdown [skip ci]"
+        git push

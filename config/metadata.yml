@@ -1,0 +1,11 @@
+---
+title: "文档标题"
+author: "作者名称"
+date: \today
+lang: zh-CN
+geometry: margin=0.5in
+fontsize: 12pt
+documentclass: article
+mainfont: Noto Sans CJK SC
+CJKmainfont: Noto Sans CJK SC
+...

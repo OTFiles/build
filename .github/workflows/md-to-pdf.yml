@@ -4,10 +4,10 @@ on:
   push:
     branches: [ main, master ]
     paths: 
-      - 'md/**'           # 仅当 md 目录下的文件变更时触发
+      - 'md/**'
   pull_request:
     branches: [ main, master ]
-  workflow_dispatch:       # 允许手动触发
+  workflow_dispatch:
 
 env:
   MD_DIR: './md'
@@ -20,31 +20,17 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
-      with:
-        fetch-depth: 0     # 获取完整历史记录用于比较文件变化
 
-    - name: Setup LaTeX and Pandoc
+    - name: Setup full LaTeX environment
       run: |
+        # 安装完整的 TeX Live 发行版（包含所有中文支持包）
         sudo apt-get update
         sudo apt-get install -y \
+          texlive-full \
           pandoc \
-          texlive-xetex \
-          texlive-latex-recommended \
-          texlive-latex-extra \
-          texlive-fonts-recommended \
-          texlive-fonts-extra \
-          texlive-science \
-          texlive-pictures \
-          lmodern \
-          fonts-noto-cjk
-
-    - name: Install Chinese fonts
-      run: |
-        # 安装额外的中文字体
-        sudo apt-get install -y \
+          fonts-noto-cjk \
           fonts-wqy-microhei \
-          fonts-wqy-zenhei \
-          ttf-mscorefonts-installer
+          fonts-wqy-zenhei
 
     - name: Create PDF directory
       run: mkdir -p ${{ env.PDF_DIR }}
@@ -64,46 +50,46 @@ jobs:
     - name: Convert changed Markdown files to PDF
       if: steps.changed-files.outputs.any_changed == 'true'
       run: |
-        # 创建临时字体目录
-        mkdir -p ~/.local/share/fonts
+        # 检查是否有更改的文件
+        if [ -z "${{ steps.changed-files.outputs.all_changed_files }}" ]; then
+          echo "No markdown files changed"
+          exit 0
+        fi
         
         # 处理每个修改的 Markdown 文件
         for md_file in ${{ steps.changed-files.outputs.all_changed_files }}; do
           if [ -f "$md_file" ]; then
             echo "Converting: $md_file"
             
-          # 提取文件名（不含扩展名）
-          filename=$(basename "$md_file" .md)
-          
-          # 生成 PDF 文件名
-          pdf_file="${{ env.PDF_DIR }}/$filename.pdf"
-          
-          # 使用 Pandoc 转换
-          pandoc "$md_file" \
-            -o "$pdf_file" \
-            --pdf-engine=xelatex \
-            --template=./templates/custom-template.tex \
-            -V mainfont="Noto Sans CJK SC" \
-            -V sansfont="Noto Sans CJK SC" \
-            -V monofont="Noto Sans Mono CJK SC" \
-            -V geometry:margin=0.5in \
-            -V geometry:paper=a4paper \
-            -V colorlinks=true \
-            -V linkcolor=blue \
-            -V urlcolor=blue \
-            -V toccolor=blue \
-            -V numbersections=true \
-            --listings \
-            -H ./config/listings-setup.tex \
-            --highlight-style tango \
-            -M date="$(date +'%Y年%m月%d日')" \
-            -M author="自动生成" \
-            --toc \
-            --toc-depth=3 \
-            -N
-          
-          echo "Generated: $pdf_file"
-        fi
+            # 提取文件名（不含扩展名）
+            filename=$(basename "$md_file" .md)
+            
+            # 生成 PDF 文件名
+            pdf_file="${{ env.PDF_DIR }}/$filename.pdf"
+            
+            # 使用 Pandoc 转换，使用更简单的中文支持方式
+            pandoc "$md_file" \
+              -o "$pdf_file" \
+              --pdf-engine=xelatex \
+              -V mainfont="WenQuanYi Micro Hei" \
+              -V sansfont="WenQuanYi Micro Hei" \
+              -V monofont="WenQuanYi Micro Hei Mono" \
+              -V geometry:margin=0.5in \
+              -V geometry:paper=a4paper \
+              -V colorlinks=true \
+              -V linkcolor=blue \
+              -V urlcolor=blue \
+              -V toccolor=blue \
+              --listings \
+              --highlight-style tango \
+              -M date="$(date +'%Y年%m月%d日')" \
+              -M author="自动生成" \
+              --toc \
+              --toc-depth=3 \
+              -N
+            
+            echo "Generated: $pdf_file"
+          fi
         done
 
     - name: Convert all MD files (manual trigger)
@@ -118,19 +104,16 @@ jobs:
           pandoc "$md_file" \
             -o "$pdf_file" \
             --pdf-engine=xelatex \
-            --template=./templates/custom-template.tex \
-            -V mainfont="Noto Sans CJK SC" \
-            -V sansfont="Noto Sans CJK SC" \
-            -V monofont="Noto Sans Mono CJK SC" \
+            -V mainfont="WenQuanYi Micro Hei" \
+            -V sansfont="WenQuanYi Micro Hei" \
+            -V monofont="WenQuanYi Micro Hei Mono" \
             -V geometry:margin=0.5in \
             -V geometry:paper=a4paper \
             -V colorlinks=true \
             -V linkcolor=blue \
             -V urlcolor=blue \
             -V toccolor=blue \
-            -V numbersections=true \
             --listings \
-            -H ./config/listings-setup.tex \
             --highlight-style tango \
             -M date="$(date +'%Y年%m月%d日')" \
             -M author="自动生成" \

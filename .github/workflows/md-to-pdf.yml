@@ -5,13 +5,15 @@ on:
     branches: [ main, master ]
     paths: 
       - 'md/**'
-  pull_request:
-    branches: [ main, master ]
   workflow_dispatch:
 
 env:
   MD_DIR: './md'
   PDF_DIR: './pdf'
+  
+# 添加写入权限
+permissions:
+  contents: write
 
 jobs:
   convert-markdown:
@@ -20,10 +22,12 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        # 重要：使用 personal access token 而不是默认的 GITHUB_TOKEN
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Setup full LaTeX environment
       run: |
-        # 安装完整的 TeX Live 发行版（包含所有中文支持包）
         sudo apt-get update
         sudo apt-get install -y \
           texlive-full \
@@ -43,31 +47,20 @@ jobs:
           md/**/*.md
           md/*.md
 
-    - name: Show changed files
-      run: |
-        echo "Changed files: ${{ steps.changed-files.outputs.all_changed_files }}"
-
     - name: Convert changed Markdown files to PDF
       if: steps.changed-files.outputs.any_changed == 'true'
       run: |
-        # 检查是否有更改的文件
         if [ -z "${{ steps.changed-files.outputs.all_changed_files }}" ]; then
           echo "No markdown files changed"
           exit 0
         fi
         
-        # 处理每个修改的 Markdown 文件
         for md_file in ${{ steps.changed-files.outputs.all_changed_files }}; do
           if [ -f "$md_file" ]; then
             echo "Converting: $md_file"
-            
-            # 提取文件名（不含扩展名）
             filename=$(basename "$md_file" .md)
-            
-            # 生成 PDF 文件名
             pdf_file="${{ env.PDF_DIR }}/$filename.pdf"
             
-            # 使用 Pandoc 转换，使用更简单的中文支持方式
             pandoc "$md_file" \
               -o "$pdf_file" \
               --pdf-engine=xelatex \
@@ -95,7 +88,6 @@ jobs:
     - name: Convert all MD files (manual trigger)
       if: github.event_name == 'workflow_dispatch'
       run: |
-        # 手动触发时转换所有文件
         find ${{ env.MD_DIR }} -name "*.md" | while read md_file; do
           echo "Converting: $md_file"
           filename=$(basename "$md_file" .md)
@@ -131,8 +123,15 @@ jobs:
 
     - name: Commit and push PDF files
       run: |
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
         git add ${{ env.PDF_DIR }}/*.pdf
-        git diff --staged --quiet || git commit -m "Auto-generated PDFs from Markdown [skip ci]"
+        
+        # 检查是否有文件需要提交
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+        
+        git commit -m "Auto-generated PDFs from Markdown [skip ci]"
         git push

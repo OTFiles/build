@@ -39,6 +39,15 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y wget xz-utils libglib2.0-0 libgssapi-krb5-2 \
+          libgl1-mesa-glx libfontconfig1 libfreetype6 libxcb-icccm4 \
+          libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-render0 \
+          libxcb-shape0 libxcb-xkb1 libxcb-xinerama0 libxkbcommon-x11-0 \
+          libxkbcommon0 libdbus-1-3
+
     - name: Create text directory
       run: mkdir -p ${{ env.TEXT_DIR }}
 
@@ -58,22 +67,33 @@ jobs:
           images/*.webp
           images/*.bmp
 
-    - name: Start Umi-OCR Docker container
+    - name: Download and setup Umi-OCR
       run: |
-        docker run -d --name umi-ocr \
-          -e HEADLESS=true \
-          -p ${{ env.UMI_OCR_PORT }}:${{ env.UMI_OCR_PORT }} \
-          hiroi-sora/umi-ocr-runtime:latest
+        # Download Umi-OCR Linux version
+        wget https://github.com/hiroi-sora/Umi-OCR/releases/download/v2.1.5/Umi-OCR_Linux_Paddle_2.1.5.tar.xz
+        
+        # Extract
+        tar -xf Umi-OCR_Linux_Paddle_2.1.5.tar.xz
+        
+        # Configure Umi-OCR to allow HTTP requests
+        printf "\n[Global]\nserver.host=0.0.0.0\n" > Umi-OCR_Linux_Paddle_2.1.5/UmiOCR-data/.settings
+        
+        # Start Umi-OCR in background
+        cd Umi-OCR_Linux_Paddle_2.1.5
+        ./umi-ocr.sh > /tmp/umi-ocr.log 2>&1 &
+        UMI_PID=$!
+        echo $UMI_PID > /tmp/umi-ocr.pid
+        cd ..
         
         # Wait for Umi-OCR to start
         echo "Waiting for Umi-OCR to start..."
-        for i in {1..30}; do
+        for i in {1..60}; do
           if curl -s http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr > /dev/null 2>&1; then
             echo "Umi-OCR is ready"
             break
           fi
           echo "Attempt $i: Umi-OCR not ready yet..."
-          sleep 2
+          sleep 3
         done
 
     - name: Process changed images
@@ -147,9 +167,13 @@ jobs:
           echo "Saved: $text_file"
         done
 
-    - name: Stop Umi-OCR Docker container
+    - name: Stop Umi-OCR
       if: always()
-      run: docker stop umi-ocr && docker rm umi-ocr
+      run: |
+        if [ -f /tmp/umi-ocr.pid ]; then
+          kill $(cat /tmp/umi-ocr.pid) || true
+          rm /tmp/umi-ocr.pid
+        fi
 
     - name: Upload text artifacts
       uses: actions/upload-artifact@v4

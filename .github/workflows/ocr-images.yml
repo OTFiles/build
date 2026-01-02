@@ -5,24 +5,6 @@ on:
     branches: [ main, master ]
     paths:
       - 'images/**'
-  workflow_dispatch:
-    inputs:
-      process_all:
-        description: 'Process all images in the images directory'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-
-env:
-  IMAGE_DIR: './images'
-  TEXT_DIR: './texts'
-  UMI_OCR_PORT: 1224
-
-permissions:
-  contents: write
 
 jobs:
   ocr-recognition:
@@ -37,14 +19,10 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y wget xz-utils python3 libglib2.0-0 libgssapi-krb5-2 \
-          libgl1 libglvnd0 libglx-mesa0 libfontconfig1 libfreetype6 libxcb-icccm4 \
-          libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-render0 \
-          libxcb-shape0 libxcb-xkb1 libxcb-xinerama0 libxkbcommon-x11-0 \
-          libxkbcommon0 libdbus-1-3
+        sudo apt-get install -y wget xz-utils python3
 
     - name: Create text directory
-      run: mkdir -p ${{ env.TEXT_DIR }}
+      run: mkdir -p texts
 
     - name: Get changed image files
       id: changed-files
@@ -56,46 +34,16 @@ jobs:
           images/**/*.png
           images/**/*.webp
           images/**/*.bmp
-          images/*.jpg
-          images/*.jpeg
-          images/*.png
-          images/*.webp
-          images/*.bmp
-
-    - name: Download and setup Umi-OCR
-      run: |
-        wget https://github.com/hiroi-sora/Umi-OCR/releases/download/v2.1.5/Umi-OCR_Linux_Paddle_2.1.5.tar.xz
-        tar -xf Umi-OCR_Linux_Paddle_2.1.5.tar.xz
-        printf "\n[Global]\nserver.host=0.0.0.0\n" > Umi-OCR_Linux_Paddle_2.1.5/UmiOCR-data/.settings
-        cd Umi-OCR_Linux_Paddle_2.1.5
-        ./umi-ocr.sh > /tmp/umi-ocr.log 2>&1 &
-        UMI_PID=$!
-        echo $UMI_PID > /tmp/umi-ocr.pid
-        cd ..
-        echo "Waiting for Umi-OCR to start..."
-        for i in {1..60}; do
-          if curl -s http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr > /dev/null 2>&1; then
-            echo "Umi-OCR is ready"
-            break
-          fi
-          echo "Attempt $i: Umi-OCR not ready yet..."
-          sleep 3
-        done
 
     - name: Process changed images
-      if: steps.changed-files.outputs.any_changed == 'true' && github.event_name != 'workflow_dispatch'
+      if: steps.changed-files.outputs.any_changed == 'true'
       run: |
-        if [ -z "${{ steps.changed-files.outputs.all_changed_files }}" ]; then
-          echo "No image files changed"
-          exit 0
-        fi
-
         for img_file in ${{ steps.changed-files.outputs.all_changed_files }}; do
           if [ -f "$img_file" ]; then
             echo "Processing: $img_file"
             filename=$(basename "$img_file")
             name_without_ext="${filename%.*}"
-            text_file="${{ env.TEXT_DIR }}/$name_without_ext.txt"
+            text_file="texts/$name_without_ext.txt"
 
             base64 -w 0 "$img_file" > /tmp/image_base64.txt
 
@@ -117,87 +65,25 @@ with open('/tmp/request.json', 'w') as f:
     json.dump(request_data, f, ensure_ascii=False)
 PYTHON_EOF
 
-            response=$(curl -s -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr \
-              -H "Content-Type: application/json" \
-              -d @/tmp/request.json)
-
-            ocr_text=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', ''))")
-
-            echo "$ocr_text" > "$text_file"
-            echo "Saved: $text_file"
+            echo "OCR processing skipped for testing"
+            echo "Test file: $text_file"
+            echo "Test: $(date)" > "$text_file"
 
             rm -f /tmp/image_base64.txt /tmp/request.json
           fi
         done
-
-    - name: Process all images (manual trigger)
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.process_all == 'true'
-      run: |
-        find ${{ env.IMAGE_DIR }} -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" -o -name "*.bmp" \) | while read img_file; do
-          echo "Processing: $img_file"
-          filename=$(basename "$img_file")
-          name_without_ext="${filename%.*}"
-          text_file="${{ env.TEXT_DIR }}/$name_without_ext.txt"
-
-          base64 -w 0 "$img_file" > /tmp/image_base64.txt
-
-          python3 << 'PYTHON_EOF'
-import json
-with open('/tmp/image_base64.txt', 'r') as f:
-    base64_data = f.read().strip()
-
-request_data = {
-    "base64": base64_data,
-    "options": {
-        "ocr.language": "models/config_chinese.txt",
-        "tbpu.parser": "multi_para",
-        "data.format": "text"
-    }
-}
-
-with open('/tmp/request.json', 'w') as f:
-    json.dump(request_data, f, ensure_ascii=False)
-PYTHON_EOF
-
-          response=$(curl -s -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr \
-            -H "Content-Type: application/json" \
-            -d @/tmp/request.json)
-
-          ocr_text=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', ''))")
-
-          echo "$ocr_text" > "$text_file"
-          echo "Saved: $text_file"
-
-          rm -f /tmp/image_base64.txt /tmp/request.json
-        done
-
-    - name: Stop Umi-OCR
-      if: always()
-      run: |
-        if [ -f /tmp/umi-ocr.pid ]; then
-          kill $(cat /tmp/umi-ocr.pid) || true
-          rm /tmp/umi-ocr.pid
-        fi
-
-    - name: Upload text artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: ocr-texts
-        path: ${{ env.TEXT_DIR }}/*.txt
-        retention-days: 7
-        if-no-files-found: ignore
 
     - name: Commit and push text files
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
 
-        if ! ls ${{ env.TEXT_DIR }}/*.txt 1> /dev/null 2>&1; then
+        if ! ls texts/*.txt 1> /dev/null 2>&1; then
           echo "No text files found"
           exit 0
         fi
 
-        git add ${{ env.TEXT_DIR }}/*.txt
+        git add texts/*.txt
 
         if git diff --staged --quiet; then
           echo "No changes to commit"

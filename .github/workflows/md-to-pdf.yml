@@ -54,16 +54,17 @@ jobs:
           echo "No markdown files changed"
           exit 0
         fi
-        
+
         for md_file in ${{ steps.changed-files.outputs.all_changed_files }}; do
           if [ -f "$md_file" ]; then
             echo "Converting: $md_file"
             filename=$(basename "$md_file" .md)
             pdf_file="${{ env.PDF_DIR }}/$filename.pdf"
-            
+
             pandoc "$md_file" \
               -o "$pdf_file" \
               --pdf-engine=xelatex \
+              --template=templates/custom-template.tex \
               -V mainfont="WenQuanYi Micro Hei" \
               -V sansfont="WenQuanYi Micro Hei" \
               -V monofont="WenQuanYi Micro Hei Mono" \
@@ -73,14 +74,12 @@ jobs:
               -V linkcolor=blue \
               -V urlcolor=blue \
               -V toccolor=blue \
-              --listings \
-              --highlight-style tango \
               -M date="$(date +'%Y年%m月%d日')" \
               -M author="自动生成" \
               --toc \
               --toc-depth=3 \
               -N
-            
+
             echo "Generated: $pdf_file"
           fi
         done
@@ -92,10 +91,11 @@ jobs:
           echo "Converting: $md_file"
           filename=$(basename "$md_file" .md)
           pdf_file="${{ env.PDF_DIR }}/$filename.pdf"
-          
+
           pandoc "$md_file" \
             -o "$pdf_file" \
             --pdf-engine=xelatex \
+            --template=templates/custom-template.tex \
             -V mainfont="WenQuanYi Micro Hei" \
             -V sansfont="WenQuanYi Micro Hei" \
             -V monofont="WenQuanYi Micro Hei Mono" \
@@ -105,8 +105,6 @@ jobs:
             -V linkcolor=blue \
             -V urlcolor=blue \
             -V toccolor=blue \
-            --listings \
-            --highlight-style tango \
             -M date="$(date +'%Y年%m月%d日')" \
             -M author="自动生成" \
             --toc \

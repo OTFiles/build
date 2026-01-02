@@ -43,7 +43,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y wget xz-utils libglib2.0-0 libgssapi-krb5-2 \
-          libglx-mesa0 libfontconfig1 libfreetype6 libxcb-icccm4 \
+          libgl1 libglvnd0 libglx-mesa0 libfontconfig1 libfreetype6 libxcb-icccm4 \
           libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-render0 \
           libxcb-shape0 libxcb-xkb1 libxcb-xinerama0 libxkbcommon-x11-0 \
           libxkbcommon0 libdbus-1-3

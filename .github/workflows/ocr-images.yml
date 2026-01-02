@@ -5,11 +5,6 @@ on:
     branches: [ main, master ]
     paths:
       - 'images/**'
-      - 'images/*.jpg'
-      - 'images/*.jpeg'
-      - 'images/*.png'
-      - 'images/*.webp'
-      - 'images/*.bmp'
   workflow_dispatch:
     inputs:
       process_all:
@@ -32,7 +27,7 @@ permissions:
 jobs:
   ocr-recognition:
     runs-on: ubuntu-latest
-    
+
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -42,7 +37,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y wget xz-utils libglib2.0-0 libgssapi-krb5-2 \
+        sudo apt-get install -y wget xz-utils python3 libglib2.0-0 libgssapi-krb5-2 \
           libgl1 libglvnd0 libglx-mesa0 libfontconfig1 libfreetype6 libxcb-icccm4 \
           libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-render0 \
           libxcb-shape0 libxcb-xkb1 libxcb-xinerama0 libxkbcommon-x11-0 \
@@ -69,23 +64,14 @@ jobs:
 
     - name: Download and setup Umi-OCR
       run: |
-        # Download Umi-OCR Linux version
         wget https://github.com/hiroi-sora/Umi-OCR/releases/download/v2.1.5/Umi-OCR_Linux_Paddle_2.1.5.tar.xz
-        
-        # Extract
         tar -xf Umi-OCR_Linux_Paddle_2.1.5.tar.xz
-        
-        # Configure Umi-OCR to allow HTTP requests
         printf "\n[Global]\nserver.host=0.0.0.0\n" > Umi-OCR_Linux_Paddle_2.1.5/UmiOCR-data/.settings
-        
-        # Start Umi-OCR in background
         cd Umi-OCR_Linux_Paddle_2.1.5
         ./umi-ocr.sh > /tmp/umi-ocr.log 2>&1 &
         UMI_PID=$!
         echo $UMI_PID > /tmp/umi-ocr.pid
         cd ..
-        
-        # Wait for Umi-OCR to start
         echo "Waiting for Umi-OCR to start..."
         for i in {1..60}; do
           if curl -s http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr > /dev/null 2>&1; then
@@ -111,14 +97,10 @@ jobs:
             name_without_ext="${filename%.*}"
             text_file="${{ env.TEXT_DIR }}/$name_without_ext.txt"
 
-            # Convert image to base64
             base64 -w 0 "$img_file" > /tmp/image_base64.txt
 
-            # Create JSON request using python to avoid argument length limits
             python3 << 'PYTHON_EOF'
 import json
-import base64
-
 with open('/tmp/image_base64.txt', 'r') as f:
     base64_data = f.read().strip()
 
@@ -133,22 +115,17 @@ request_data = {
 
 with open('/tmp/request.json', 'w') as f:
     json.dump(request_data, f, ensure_ascii=False)
-
 PYTHON_EOF
 
-            # Call API with JSON file
             response=$(curl -s -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr \
               -H "Content-Type: application/json" \
               -d @/tmp/request.json)
 
-            # Extract text from response
             ocr_text=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', ''))")
 
-            # Save to text file
             echo "$ocr_text" > "$text_file"
             echo "Saved: $text_file"
 
-            # Clean up temp files
             rm -f /tmp/image_base64.txt /tmp/request.json
           fi
         done
@@ -162,13 +139,10 @@ PYTHON_EOF
           name_without_ext="${filename%.*}"
           text_file="${{ env.TEXT_DIR }}/$name_without_ext.txt"
 
-          # Convert image to base64
           base64 -w 0 "$img_file" > /tmp/image_base64.txt
 
-          # Create JSON request using python to avoid argument length limits
           python3 << 'PYTHON_EOF'
 import json
-
 with open('/tmp/image_base64.txt', 'r') as f:
     base64_data = f.read().strip()
 
@@ -183,22 +157,17 @@ request_data = {
 
 with open('/tmp/request.json', 'w') as f:
     json.dump(request_data, f, ensure_ascii=False)
-
 PYTHON_EOF
 
-          # Call API with JSON file
           response=$(curl -s -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr \
             -H "Content-Type: application/json" \
             -d @/tmp/request.json)
 
-          # Extract text from response
           ocr_text=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', ''))")
 
-          # Save to text file
           echo "$ocr_text" > "$text_file"
           echo "Saved: $text_file"
 
-          # Clean up temp files
           rm -f /tmp/image_base64.txt /tmp/request.json
         done
 
@@ -216,13 +185,13 @@ PYTHON_EOF
         name: ocr-texts
         path: ${{ env.TEXT_DIR }}/*.txt
         retention-days: 7
+        if-no-files-found: ignore
 
     - name: Commit and push text files
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
 
-        # 检查是否有文本文件
         if ! ls ${{ env.TEXT_DIR }}/*.txt 1> /dev/null 2>&1; then
           echo "No text files found"
           exit 0
@@ -230,7 +199,6 @@ PYTHON_EOF
 
         git add ${{ env.TEXT_DIR }}/*.txt
 
-        # Check if there are files to commit
         if git diff --staged --quiet; then
           echo "No changes to commit"
           exit 0

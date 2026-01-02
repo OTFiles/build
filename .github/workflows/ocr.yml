@@ -6,6 +6,9 @@ on:
     paths:
       - 'images/**'
 
+permissions:
+  contents: write
+
 jobs:
   ocr:
     runs-on: ubuntu-latest

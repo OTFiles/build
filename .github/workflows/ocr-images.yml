@@ -103,35 +103,59 @@ jobs:
           echo "No image files changed"
           exit 0
         fi
-        
+
         for img_file in ${{ steps.changed-files.outputs.all_changed_files }}; do
           if [ -f "$img_file" ]; then
             echo "Processing: $img_file"
             filename=$(basename "$img_file")
             name_without_ext="${filename%.*}"
             text_file="${{ env.TEXT_DIR }}/$name_without_ext.txt"
-            
+
             # Convert image to base64
-            base64_data=$(base64 -w 0 "$img_file")
-            
-            # Call Umi-OCR API
+            base64 -w 0 "$img_file" > /tmp/image_base64.txt
+
+            # Call Umi-OCR API using base64 from file
             response=$(curl -s -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr \
               -H "Content-Type: application/json" \
-              -d "{
-                \"base64\": \"$base64_data\",
-                \"options\": {
-                  \"ocr.language\": \"models/config_chinese.txt\",
-                  \"tbpu.parser\": \"multi_para\",
-                  \"data.format\": \"text\"
-                }
-              }")
-            
+              -d @/tmp/request.json.tmp \
+              -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr)
+
+            # Create JSON request using python to avoid argument length limits
+            python3 << 'PYTHON_EOF'
+import json
+import base64
+
+with open('/tmp/image_base64.txt', 'r') as f:
+    base64_data = f.read().strip()
+
+request_data = {
+    "base64": base64_data,
+    "options": {
+        "ocr.language": "models/config_chinese.txt",
+        "tbpu.parser": "multi_para",
+        "data.format": "text"
+    }
+}
+
+with open('/tmp/request.json', 'w') as f:
+    json.dump(request_data, f, ensure_ascii=False)
+
+PYTHON_EOF
+
+            # Call API with JSON file
+            response=$(curl -s -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr \
+              -H "Content-Type: application/json" \
+              -d @/tmp/request.json)
+
             # Extract text from response
             ocr_text=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', ''))")
-            
+
             # Save to text file
             echo "$ocr_text" > "$text_file"
             echo "Saved: $text_file"
+
+            # Clean up temp files
+            rm -f /tmp/image_base64.txt /tmp/request.json
           fi
         done
 
@@ -143,28 +167,45 @@ jobs:
           filename=$(basename "$img_file")
           name_without_ext="${filename%.*}"
           text_file="${{ env.TEXT_DIR }}/$name_without_ext.txt"
-          
+
           # Convert image to base64
-          base64_data=$(base64 -w 0 "$img_file")
-          
-          # Call Umi-OCR API
+          base64 -w 0 "$img_file" > /tmp/image_base64.txt
+
+          # Create JSON request using python to avoid argument length limits
+          python3 << 'PYTHON_EOF'
+import json
+
+with open('/tmp/image_base64.txt', 'r') as f:
+    base64_data = f.read().strip()
+
+request_data = {
+    "base64": base64_data,
+    "options": {
+        "ocr.language": "models/config_chinese.txt",
+        "tbpu.parser": "multi_para",
+        "data.format": "text"
+    }
+}
+
+with open('/tmp/request.json', 'w') as f:
+    json.dump(request_data, f, ensure_ascii=False)
+
+PYTHON_EOF
+
+          # Call API with JSON file
           response=$(curl -s -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr \
             -H "Content-Type: application/json" \
-            -d "{
-              \"base64\": \"$base64_data\",
-              \"options\": {
-                \"ocr.language\": \"models/config_chinese.txt\",
-                \"tbpu.parser\": \"multi_para\",
-                \"data.format\": \"text\"
-              }
-            }")
-          
+            -d @/tmp/request.json)
+
           # Extract text from response
           ocr_text=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', ''))")
-          
+
           # Save to text file
           echo "$ocr_text" > "$text_file"
           echo "Saved: $text_file"
+
+          # Clean up temp files
+          rm -f /tmp/image_base64.txt /tmp/request.json
         done
 
     - name: Stop Umi-OCR

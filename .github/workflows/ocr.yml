@@ -1,0 +1,45 @@
+name: OCR Recognition
+
+on:
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'images/**'
+
+jobs:
+  ocr:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create text directory
+        run: mkdir -p texts
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v41
+        with:
+          files: |
+            images/**/*.jpg
+            images/**/*.png
+
+      - name: Process images
+        if: steps.changed-files.outputs.any_changed == 'true'
+        run: |
+          for img in ${{ steps.changed-files.outputs.all_changed_files }}; do
+            if [ -f "$img" ]; then
+              filename=$(basename "$img" .jpg)
+              echo "Processing: $filename"
+              echo "Test OCR result for $filename" > "texts/${filename}.txt"
+            fi
+          done
+
+      - name: Commit changes
+        run: |
+          git config user.email "bot@example.com"
+          git config user.name "bot"
+          git add texts/*.txt || true
+          git diff --staged --quiet || git commit -m "Auto OCR [skip ci]" || true
+          git pull --rebase || true
+          git push || true

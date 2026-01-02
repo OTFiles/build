@@ -114,12 +114,6 @@ jobs:
             # Convert image to base64
             base64 -w 0 "$img_file" > /tmp/image_base64.txt
 
-            # Call Umi-OCR API using base64 from file
-            response=$(curl -s -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr \
-              -H "Content-Type: application/json" \
-              -d @/tmp/request.json.tmp \
-              -X POST http://localhost:${{ env.UMI_OCR_PORT }}/api/ocr)
-
             # Create JSON request using python to avoid argument length limits
             python3 << 'PYTHON_EOF'
 import json

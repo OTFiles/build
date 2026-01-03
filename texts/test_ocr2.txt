@@ -1,1 +1,1 @@
-OCR result for test_ocr2
+OCR failed for test_ocr2

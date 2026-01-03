@@ -1,1 +1,1 @@
-Test OCR result for test2
+OCR result for test2

@@ -22,22 +22,31 @@ def process_image(image_path, output_path):
             'OCREngine': 2  # Use OCR Engine 2 for better accuracy
         }
 
-        response = requests.post(url, data=payload)
+        print(f"Calling OCR.space API for {image_path}...")
+        response = requests.post(url, data=payload, timeout=30)
+        print(f"Response status: {response.status_code}")
         
         # Parse response
         try:
             result = response.json()
         except:
             print(f"Error: Invalid JSON response")
-            print(f"Response: {response.text[:500]}")
+            print(f"Response text: {response.text[:1000]}")
             return False
 
+        print(f"Response type: {type(result)}")
+        
         # Extract text from response
-        if result.get('IsErroredOnProcessing', False):
-            print(f"Error: {result.get('ErrorMessage', 'Unknown error')}")
-            return False
+        if isinstance(result, dict):
+            if result.get('IsErroredOnProcessing', False):
+                print(f"Error: {result.get('ErrorMessage', 'Unknown error')}")
+                return False
 
-        ocr_text = result.get('ParsedText', '')
+            ocr_text = result.get('ParsedText', '')
+        else:
+            print(f"Error: Unexpected response type")
+            print(f"Response: {str(result)[:500]}")
+            return False
 
         # Save result
         with open(output_path, 'w', encoding='utf-8') as f:

@@ -25,34 +25,127 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mkdir -p texts
-      - name: Install Tesseract
+      
+      - name: Download and setup Umi-OCR
         run: |
-          sudo apt-get update
-          sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra
+          wget https://github.com/hiroi-sora/Umi-OCR/releases/download/v2.1.5/Umi-OCR_Linux_Paddle_2.1.5.tar.xz
+          tar -xf Umi-OCR_Linux_Paddle_2.1.5.tar.xz
+          
+          # Configure to allow HTTP requests
+          printf "\n[Global]\nserver.host=0.0.0.0\n" > Umi-OCR_Linux_Paddle_2.1.5/UmiOCR-data/.settings
+          
+          # Start Umi-OCR in background with virtual display
+          export HEADLESS=true
+          xvfb-run -a Umi-OCR_Linux_Paddle_2.1.5/umi-ocr.sh > /tmp/umi-ocr.log 2>&1 &
+          UMI_PID=$!
+          echo $UMI_PID > /tmp/umi-ocr.pid
+          
+          # Wait for Umi-OCR to start
+          echo "Waiting for Umi-OCR to start..."
+          for i in {1..120}; do
+            if curl -s http://localhost:1224/api/ocr > /dev/null 2>&1; then
+              echo "Umi-OCR is ready"
+              break
+            fi
+            echo "Attempt $i: Umi-OCR not ready yet..."
+            sleep 2
+          done
+          
+          # Show log if failed to start
+          if ! curl -s http://localhost:1224/api/ocr > /dev/null 2>&1; then
+            echo "Umi-OCR failed to start. Log:"
+            cat /tmp/umi-ocr.log
+            exit 1
+          fi
+      
       - name: Process all images
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.process_all == 'true'
         run: |
-          for img in images/*.jpg images/*.jpeg images/*.png images/*.bmp; do
+          find images -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" -o -name "*.bmp" \) | while read img; do
             if [ -f "$img" ]; then
-              name=$(basename "$img" | sed 's/\.[^.]*$//')
-              echo "Processing: $name"
-              tesseract "$img" stdout -l chi_sim+eng > "texts/${name}.txt" 2>/dev/null || echo "OCR failed for $name" > "texts/${name}.txt"
+              filename=$(basename "$img" | sed 's/\.[^.]*$//')
+              echo "Processing: $filename"
+              
+              # Convert image to base64
+              base64 -w 0 "$img" > /tmp/image_base64.txt
+              
+              # Create JSON request
+              cat > /tmp/request.json << EOF
+{
+  "base64": "$(cat /tmp/image_base64.txt)",
+  "options": {
+    "tbpu.parser": "multi_para"
+  }
+}
+EOF
+              
+              # Call API
+              response=$(curl -s -X POST http://localhost:1224/api/ocr \
+                -H "Content-Type: application/json" \
+                -d @/tmp/request.json)
+              
+              # Extract text from response
+              ocr_text=$(echo "$response" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('data', '') if isinstance(data, dict) else '')")
+              
+              # Save to text file
+              echo "$ocr_text" > "texts/${filename}.txt"
+              echo "Saved: texts/${filename}.txt"
+              
+              # Clean up
+              rm -f /tmp/image_base64.txt /tmp/request.json
             fi
           done
+      
       - name: Process changed images
         if: github.event_name == 'push'
         run: |
-          for img in images/*.jpg images/*.jpeg images/*.png images/*.bmp; do
+          find images -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" -o -name "*.bmp" \) | while read img; do
             if [ -f "$img" ]; then
-              name=$(basename "$img" | sed 's/\.[^.]*$//')
-              echo "Processing: $name"
-              tesseract "$img" stdout -l chi_sim+eng > "texts/${name}.txt" 2>/dev/null || echo "OCR failed for $name" > "texts/${name}.txt"
+              filename=$(basename "$img" | sed 's/\.[^.]*$//')
+              echo "Processing: $filename"
+              
+              # Convert image to base64
+              base64 -w 0 "$img" > /tmp/image_base64.txt
+              
+              # Create JSON request
+              cat > /tmp/request.json << EOF
+{
+  "base64": "$(cat /tmp/image_base64.txt)",
+  "options": {
+    "tbpu.parser": "multi_para"
+  }
+}
+EOF
+              
+              # Call API
+              response=$(curl -s -X POST http://localhost:1224/api/ocr \
+                -H "Content-Type: application/json" \
+                -d @/tmp/request.json)
+              
+              # Extract text from response
+              ocr_text=$(echo "$response" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('data', '') if isinstance(data, dict) else '')")
+              
+              # Save to text file
+              echo "$ocr_text" > "texts/${filename}.txt"
+              echo "Saved: texts/${filename}.txt"
+              
+              # Clean up
+              rm -f /tmp/image_base64.txt /tmp/request.json
             fi
           done
+      
+      - name: Stop Umi-OCR
+        if: always()
+        run: |
+          if [ -f /tmp/umi-ocr.pid ]; then
+            kill $(cat /tmp/umi-ocr.pid) 2>/dev/null || true
+            rm /tmp/umi-ocr.pid
+          fi
+      
       - run: |
           git config user.email "bot@example.com"
           git config user.name "bot"
           git add texts/*.txt || true
-          git diff --staged --quiet || git commit -m "Auto OCR" || true
+          git diff --staged --quiet || git commit -m "Auto OCR [skip ci]" || true
           git pull --rebase || true
           git push || true

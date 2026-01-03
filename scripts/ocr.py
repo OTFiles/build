@@ -1,42 +1,35 @@
 #!/usr/bin/env python3
 import base64
-import json
-import subprocess
+import requests
 import sys
-import os
 
 def process_image(image_path, output_path):
-    """Process a single image with Umi-OCR"""
+    """Process a single image with OCR.space API"""
     try:
         # Read and encode image
         with open(image_path, 'rb') as f:
             image_data = base64.b64encode(f.read()).decode('utf-8')
 
-        # Create request
-        request = {
-            "base64": image_data,
-            "options": {
-                "tbpu.parser": "multi_para"
-            }
+        # Call OCR.space API (free tier)
+        url = 'https://api.ocr.space/parse/image'
+        payload = {
+            'base64Image': f'data:image/jpeg;base64,{image_data}',
+            'language': 'chs',  # Chinese Simplified
+            'isOverlayRequired': False,
+            'scale': True,
+            'detectOrientation': True,
+            'OCREngine': 2  # Use OCR Engine 2 for better accuracy
         }
 
-        # Save request to file
-        with open('/tmp/request.json', 'w', encoding='utf-8') as f:
-            json.dump(request, f, ensure_ascii=False)
+        response = requests.post(url, data=payload)
+        result = response.json()
 
-        # Call API
-        result = subprocess.run([
-            'curl', '-s', '-X', 'POST', 'http://localhost:1224/api/ocr',
-            '-H', 'Content-Type: application/json',
-            '-d', '@/tmp/request.json'
-        ], capture_output=True, text=True)
+        # Extract text from response
+        if result.get('IsErroredOnProcessing', False):
+            print(f"Error: {result.get('ErrorMessage', 'Unknown error')}")
+            return False
 
-        # Parse response
-        try:
-            response = json.loads(result.stdout)
-            ocr_text = response.get('data', '')
-        except:
-            ocr_text = ''
+        ocr_text = result.get('ParsedText', '')
 
         # Save result
         with open(output_path, 'w', encoding='utf-8') as f:

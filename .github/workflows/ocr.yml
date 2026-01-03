@@ -26,38 +26,6 @@ jobs:
       - uses: actions/checkout@v4
       - run: mkdir -p texts
       
-      - name: Download and setup Umi-OCR
-        run: |
-          wget https://github.com/hiroi-sora/Umi-OCR/releases/download/v2.1.5/Umi-OCR_Linux_Paddle_2.1.5.tar.xz
-          tar -xf Umi-OCR_Linux_Paddle_2.1.5.tar.xz
-          
-          # Configure to allow HTTP requests
-          printf "\n[Global]\nserver.host=0.0.0.0\n" > Umi-OCR_Linux_Paddle_2.1.5/UmiOCR-data/.settings
-          
-          # Start Umi-OCR in background with virtual display
-          export HEADLESS=true
-          xvfb-run -a Umi-OCR_Linux_Paddle_2.1.5/umi-ocr.sh > /tmp/umi-ocr.log 2>&1 &
-          UMI_PID=$!
-          echo $UMI_PID > /tmp/umi-ocr.pid
-          
-          # Wait for Umi-OCR to start
-          echo "Waiting for Umi-OCR to start..."
-          for i in {1..120}; do
-            if curl -s http://localhost:1224/api/ocr > /dev/null 2>&1; then
-              echo "Umi-OCR is ready"
-              break
-            fi
-            echo "Attempt $i: Umi-OCR not ready yet..."
-            sleep 2
-          done
-          
-          # Show log if failed to start
-          if ! curl -s http://localhost:1224/api/ocr > /dev/null 2>&1; then
-            echo "Umi-OCR failed to start. Log:"
-            cat /tmp/umi-ocr.log
-            exit 1
-          fi
-      
       - name: Process all images
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.process_all == 'true'
         run: |
@@ -79,14 +47,6 @@ jobs:
               python3 scripts/ocr.py "$img" "texts/${filename}.txt"
             fi
           done
-      
-      - name: Stop Umi-OCR
-        if: always()
-        run: |
-          if [ -f /tmp/umi-ocr.pid ]; then
-            kill $(cat /tmp/umi-ocr.pid) 2>/dev/null || true
-            rm /tmp/umi-ocr.pid
-          fi
       
       - run: |
           git config user.email "bot@example.com"

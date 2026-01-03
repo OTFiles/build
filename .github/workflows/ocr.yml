@@ -5,6 +5,16 @@ on:
     branches: [ main, master ]
     paths:
       - 'images/**'
+  workflow_dispatch:
+    inputs:
+      process_all:
+        description: 'Process all images in the images directory'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: write
@@ -27,14 +37,26 @@ jobs:
             images/**/*.jpg
             images/**/*.png
 
-      - name: Process images
-        if: steps.changed-files.outputs.any_changed == 'true'
+      - name: Process all images
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.process_all == 'true'
+        run: |
+          echo "Processing all images in images directory..."
+          find images -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" -o -name "*.bmp" \) | while read img; do
+            if [ -f "$img" ]; then
+              filename=$(basename "$img" | sed 's/\.[^.]*$//')
+              echo "Processing: $filename"
+              echo "OCR result for $filename" > "texts/${filename}.txt"
+            fi
+          done
+
+      - name: Process changed images
+        if: steps.changed-files.outputs.any_changed == 'true' && github.event_name != 'workflow_dispatch'
         run: |
           for img in ${{ steps.changed-files.outputs.all_changed_files }}; do
             if [ -f "$img" ]; then
-              filename=$(basename "$img" .jpg)
+              filename=$(basename "$img" | sed 's/\.[^.]*$//')
               echo "Processing: $filename"
-              echo "Test OCR result for $filename" > "texts/${filename}.txt"
+              echo "OCR result for $filename" > "texts/${filename}.txt"
             fi
           done
 

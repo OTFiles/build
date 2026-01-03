@@ -74,11 +74,14 @@ jobs:
               -V linkcolor=blue \
               -V urlcolor=blue \
               -V toccolor=blue \
+              -V fontsize=12pt \
+              -V linestretch=1.2 \
               -M date="$(date +'%Y年%m月%d日')" \
               -M author="自动生成" \
               --toc \
               --toc-depth=3 \
-              -N
+              -N \
+              --wrap=preserve
 
             echo "Generated: $pdf_file"
           fi

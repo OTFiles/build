@@ -66,33 +66,49 @@ jobs:
               filename=$(basename "$img" | sed 's/\.[^.]*$//')
               echo "Processing: $filename"
               
-              # Convert image to base64
-              base64 -w 0 "$img" > /tmp/image_base64.txt
-              
-              # Create JSON request
-              cat > /tmp/request.json << EOF
-{
-  "base64": "$(cat /tmp/image_base64.txt)",
-  "options": {
-    "tbpu.parser": "multi_para"
-  }
+              # Use Python to process the image
+              python3 << PYTHON_SCRIPT
+import base64
+import json
+import subprocess
+import sys
+
+# Read and encode image
+with open('$img', 'rb') as f:
+    image_data = base64.b64encode(f.read()).decode('utf-8')
+
+# Create request
+request = {
+    "base64": image_data,
+    "options": {
+        "tbpu.parser": "multi_para"
+    }
 }
-EOF
-              
-              # Call API
-              response=$(curl -s -X POST http://localhost:1224/api/ocr \
-                -H "Content-Type: application/json" \
-                -d @/tmp/request.json)
-              
-              # Extract text from response
-              ocr_text=$(echo "$response" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('data', '') if isinstance(data, dict) else '')")
-              
-              # Save to text file
-              echo "$ocr_text" > "texts/${filename}.txt"
-              echo "Saved: texts/${filename}.txt"
-              
-              # Clean up
-              rm -f /tmp/image_base64.txt /tmp/request.json
+
+# Save request to file
+with open('/tmp/request.json', 'w', encoding='utf-8') as f:
+    json.dump(request, f, ensure_ascii=False)
+
+# Call API
+result = subprocess.run([
+    'curl', '-s', '-X', 'POST', 'http://localhost:1224/api/ocr',
+    '-H', 'Content-Type: application/json',
+    '-d', '@/tmp/request.json'
+], capture_output=True, text=True)
+
+# Parse response
+try:
+    response = json.loads(result.stdout)
+    ocr_text = response.get('data', '')
+except:
+    ocr_text = ''
+
+# Save result
+with open('texts/${filename}.txt', 'w', encoding='utf-8') as f:
+    f.write(ocr_text)
+
+print(f"Saved: texts/${filename}.txt")
+PYTHON_SCRIPT
             fi
           done
       
@@ -104,33 +120,49 @@ EOF
               filename=$(basename "$img" | sed 's/\.[^.]*$//')
               echo "Processing: $filename"
               
-              # Convert image to base64
-              base64 -w 0 "$img" > /tmp/image_base64.txt
-              
-              # Create JSON request
-              cat > /tmp/request.json << EOF
-{
-  "base64": "$(cat /tmp/image_base64.txt)",
-  "options": {
-    "tbpu.parser": "multi_para"
-  }
+              # Use Python to process the image
+              python3 << PYTHON_SCRIPT
+import base64
+import json
+import subprocess
+import sys
+
+# Read and encode image
+with open('$img', 'rb') as f:
+    image_data = base64.b64encode(f.read()).decode('utf-8')
+
+# Create request
+request = {
+    "base64": image_data,
+    "options": {
+        "tbpu.parser": "multi_para"
+    }
 }
-EOF
-              
-              # Call API
-              response=$(curl -s -X POST http://localhost:1224/api/ocr \
-                -H "Content-Type: application/json" \
-                -d @/tmp/request.json)
-              
-              # Extract text from response
-              ocr_text=$(echo "$response" | python3 -c "import sys, json; data = json.load(sys.stdin); print(data.get('data', '') if isinstance(data, dict) else '')")
-              
-              # Save to text file
-              echo "$ocr_text" > "texts/${filename}.txt"
-              echo "Saved: texts/${filename}.txt"
-              
-              # Clean up
-              rm -f /tmp/image_base64.txt /tmp/request.json
+
+# Save request to file
+with open('/tmp/request.json', 'w', encoding='utf-8') as f:
+    json.dump(request, f, ensure_ascii=False)
+
+# Call API
+result = subprocess.run([
+    'curl', '-s', '-X', 'POST', 'http://localhost:1224/api/ocr',
+    '-H', 'Content-Type: application/json',
+    '-d', '@/tmp/request.json'
+], capture_output=True, text=True)
+
+# Parse response
+try:
+    response = json.loads(result.stdout)
+    ocr_text = response.get('data', '')
+except:
+    ocr_text = ''
+
+# Save result
+with open('texts/${filename}.txt', 'w', encoding='utf-8') as f:
+    f.write(ocr_text)
+
+print(f"Saved: texts/${filename}.txt")
+PYTHON_SCRIPT
             fi
           done
       

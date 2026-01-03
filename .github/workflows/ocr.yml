@@ -1,4 +1,4 @@
-name: OCR Recognition
+name: OCR
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       process_all:
-        description: 'Process all images in the images directory'
+        description: 'Process all images'
         required: false
         default: 'true'
         type: choice
@@ -22,185 +22,37 @@ permissions:
 jobs:
   ocr:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y wget xz-utils python3 libglib2.0-0 libgssapi-krb5-2 \
-          libgl1 libglvnd0 libglx-mesa0 libfontconfig1 libfreetype6 libxcb-icccm4 \
-          libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-render0 \
-          libxcb-shape0 libxcb-xkb1 libxcb-xinerama0 libxkbcommon-x11-0 \
-          libxkbcommon0 libdbus-1-3
-
-    - name: Create text directory
-      run: mkdir -p texts
-
-    - name: Download and setup Umi-OCR
-      run: |
-        # Download Umi-OCR Linux version
-        wget https://github.com/hiroi-sora/Umi-OCR/releases/download/v2.1.5/Umi-OCR_Linux_Paddle_2.1.5.tar.xz
-        
-        # Extract
-        tar -xf Umi-OCR_Linux_Paddle_2.1.5.tar.xz
-        
-        # Configure Umi-OCR to allow HTTP requests
-        printf "\n[Global]\nserver.host=0.0.0.0\n" > Umi-OCR_Linux_Paddle_2.1.5/UmiOCR-data/.settings
-        
-        # Start Umi-OCR in background
-        cd Umi-OCR_Linux_Paddle_2.1.5
-        ./umi-ocr.sh > /tmp/umi-ocr.log 2>&1 &
-        UMI_PID=$!
-        echo $UMI_PID > /tmp/umi-ocr.pid
-        cd ..
-        
-        # Wait for Umi-OCR to start
-        echo "Waiting for Umi-OCR to start..."
-        for i in {1..60}; do
-          if curl -s http://localhost:1224/api/ocr > /dev/null 2>&1; then
-            echo "Umi-OCR is ready"
-            break
-          fi
-          echo "Attempt $i: Umi-OCR not ready yet..."
-          sleep 3
-        done
-
-    - name: Process all images
-      if: github.event_name == 'workflow_dispatch' && github.event.inputs.process_all == 'true'
-      run: |
-        echo "Processing all images in images directory..."
-        find images -type f \( -name "*.jpg" -o -name "*.jpeg" -o -name "*.png" -o -name "*.webp" -o -name "*.bmp" \) | while read img; do
-          if [ -f "$img" ]; then
-            filename=$(basename "$img" | sed 's/\.[^.]*$//')
-            echo "Processing: $filename"
-            
-            # Convert image to base64
-            base64 -w 0 "$img" > /tmp/image_base64.txt
-            
-            # Create JSON request using python
-            python3 << 'PYTHON_EOF'
-import json
-
-with open('/tmp/image_base64.txt', 'r') as f:
-    base64_data = f.read().strip()
-
-request_data = {
-    "base64": base64_data,
-    "options": {
-        "ocr.language": "models/config_chinese.txt",
-        "tbpu.parser": "multi_para",
-        "data.format": "text"
-    }
-}
-
-with open('/tmp/request.json', 'w') as f:
-    json.dump(request_data, f, ensure_ascii=False)
-PYTHON_EOF
-
-            # Call API with JSON file
-            response=$(curl -s -X POST http://localhost:1224/api/ocr \
-              -H "Content-Type: application/json" \
-              -d @/tmp/request.json)
-
-            # Extract text from response
-            ocr_text=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', ''))")
-
-            # Save to text file
-            echo "$ocr_text" > "texts/${filename}.txt"
-            echo "Saved: texts/${filename}.txt"
-
-            # Clean up temp files
-            rm -f /tmp/image_base64.txt /tmp/request.json
-          fi
-        done
-
-    - name: Get changed files
-      id: changed-files
-      uses: tj-actions/changed-files@v41
-      if: github.event_name != 'workflow_dispatch'
-      with:
-        files: |
-          images/**/*.jpg
-          images/**/*.png
-
-    - name: Process changed images
-      if: steps.changed-files.outputs.any_changed == 'true' && github.event_name != 'workflow_dispatch'
-      run: |
-        for img in ${{ steps.changed-files.outputs.all_changed_files }}; do
-          if [ -f "$img" ]; then
-            filename=$(basename "$img" | sed 's/\.[^.]*$//')
-            echo "Processing: $filename"
-            
-            # Convert image to base64
-            base64 -w 0 "$img" > /tmp/image_base64.txt
-            
-            # Create JSON request using python
-            python3 << 'PYTHON_EOF'
-import json
-
-with open('/tmp/image_base64.txt', 'r') as f:
-    base64_data = f.read().strip()
-
-request_data = {
-    "base64": base64_data,
-    "options": {
-        "ocr.language": "models/config_chinese.txt",
-        "tbpu.parser": "multi_para",
-        "data.format": "text"
-    }
-}
-
-with open('/tmp/request.json', 'w') as f:
-    json.dump(request_data, f, ensure_ascii=False)
-PYTHON_EOF
-
-            # Call API with JSON file
-            response=$(curl -s -X POST http://localhost:1224/api/ocr \
-              -H "Content-Type: application/json" \
-              -d @/tmp/request.json)
-
-            # Extract text from response
-            ocr_text=$(echo "$response" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data', ''))")
-
-            # Save to text file
-            echo "$ocr_text" > "texts/${filename}.txt"
-            echo "Saved: texts/${filename}.txt"
-
-            # Clean up temp files
-            rm -f /tmp/image_base64.txt /tmp/request.json
-          fi
-        done
-
-    - name: Stop Umi-OCR
-      if: always()
-      run: |
-        if [ -f /tmp/umi-ocr.pid ]; then
-          kill $(cat /tmp/umi-ocr.pid) || true
-          rm /tmp/umi-ocr.pid
-        fi
-
-    - name: Commit changes
-      run: |
-        git config user.email "bot@example.com"
-        git config user.name "bot"
-        
-        # Check if there are text files
-        if ! ls texts/*.txt 1> /dev/null 2>&1; then
-          echo "No text files found"
-          exit 0
-        fi
-        
-        git add texts/*.txt
-        
-        # Check if there are files to commit
-        if git diff --staged --quiet; then
-          echo "No changes to commit"
-          exit 0
-        fi
-        
-        git commit -m "Auto OCR [skip ci]"
-        git pull --rebase
-        git push
+      - uses: actions/checkout@v4
+      - run: mkdir -p texts
+      - name: Install Tesseract
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra
+      - name: Process all images
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.process_all == 'true'
+        run: |
+          for img in images/*.jpg images/*.jpeg images/*.png images/*.bmp; do
+            if [ -f "$img" ]; then
+              name=$(basename "$img" | sed 's/\.[^.]*$//')
+              echo "Processing: $name"
+              tesseract "$img" stdout -l chi_sim+eng > "texts/${name}.txt" 2>/dev/null || echo "OCR failed for $name" > "texts/${name}.txt"
+            fi
+          done
+      - name: Process changed images
+        if: github.event_name == 'push'
+        run: |
+          for img in images/*.jpg images/*.jpeg images/*.png images/*.bmp; do
+            if [ -f "$img" ]; then
+              name=$(basename "$img" | sed 's/\.[^.]*$//')
+              echo "Processing: $name"
+              tesseract "$img" stdout -l chi_sim+eng > "texts/${name}.txt" 2>/dev/null || echo "OCR failed for $name" > "texts/${name}.txt"
+            fi
+          done
+      - run: |
+          git config user.email "bot@example.com"
+          git config user.name "bot"
+          git add texts/*.txt || true
+          git diff --staged --quiet || git commit -m "Auto OCR" || true
+          git pull --rebase || true
+          git push || true

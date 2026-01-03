@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import base64
 import requests
+import json
 import sys
 
 def process_image(image_path, output_path):
@@ -22,7 +23,14 @@ def process_image(image_path, output_path):
         }
 
         response = requests.post(url, data=payload)
-        result = response.json()
+        
+        # Parse response
+        try:
+            result = response.json()
+        except:
+            print(f"Error: Invalid JSON response")
+            print(f"Response: {response.text[:500]}")
+            return False
 
         # Extract text from response
         if result.get('IsErroredOnProcessing', False):
@@ -39,6 +47,8 @@ def process_image(image_path, output_path):
         return True
     except Exception as e:
         print(f"Error processing {image_path}: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 if __name__ == '__main__':

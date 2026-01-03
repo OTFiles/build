@@ -6,6 +6,15 @@ on:
     paths:
       - 'images/**'
   workflow_dispatch:
+    inputs:
+      process_all:
+        description: 'Process all images'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 permissions:
   contents: write
@@ -16,11 +25,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: mkdir -p texts
-      - run: |
-          for img in images/*.jpg; do
+      - name: Install Tesseract
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-chi-sim tesseract-ocr-chi-tra
+      - name: Process all images
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.process_all == 'true'
+        run: |
+          for img in images/*.jpg images/*.jpeg images/*.png images/*.bmp; do
             if [ -f "$img" ]; then
-              name=$(basename "$img" .jpg)
-              echo "OCR result for $name" > "texts/${name}.txt"
+              name=$(basename "$img" | sed 's/\.[^.]*$//')
+              echo "Processing: $name"
+              tesseract "$img" stdout -l chi_sim+eng > "texts/${name}.txt" 2>/dev/null || echo "OCR failed for $name" > "texts/${name}.txt"
+            fi
+          done
+      - name: Process changed images
+        if: github.event_name == 'push'
+        run: |
+          for img in images/*.jpg images/*.jpeg images/*.png images/*.bmp; do
+            if [ -f "$img" ]; then
+              name=$(basename "$img" | sed 's/\.[^.]*$//')
+              echo "Processing: $name"
+              tesseract "$img" stdout -l chi_sim+eng > "texts/${name}.txt" 2>/dev/null || echo "OCR failed for $name" > "texts/${name}.txt"
             fi
           done
       - run: |
